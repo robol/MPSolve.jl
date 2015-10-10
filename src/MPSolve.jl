@@ -112,7 +112,6 @@ function roots(real_coefficients :: AbstractVector{BigFloat},
     (ctx, mp) = setupMPSolve(n)
 
     for i = 1 : n + 1
-        println(string(real_coefficients[i]))
         ccall ((:mps_monomial_poly_set_coefficient_s, "libmps"), Void,
                (Ptr{Void}, Ptr{Void}, Int, Ptr{UInt8}, Ptr{UInt8}), 
                ctx, mp, n-i+1, string(real_coefficients[i]), 
