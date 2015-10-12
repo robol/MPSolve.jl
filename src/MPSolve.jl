@@ -1,6 +1,28 @@
 module MPSolve
 
-export polyval, roots
+using Polynomials
+
+export mps_roots
+
+# 
+# The following is taken from the discussion that can be found
+# at https://groups.google.com/forum/#!msg/julia-dev/uqp7LziUEfY/9RkiymZY5twJ. 
+# 
+immutable mpz_struct
+   alloc::Cint
+   size::Cint
+   d::Ptr{Base.GMP.Limb}
+end
+
+Base.convert(::Type{mpz_struct}, i::BigInt) = mpz_struct(i.alloc, i.size, i.d)
+
+type mpq_struct
+     num::mpz_struct
+     den::mpz_struct
+     mpq_struct(num, den) = new(num, den)
+     mpq_struct(q::Rational{BigInt}) = mpq_struct(q.num, q.den)
+     mpq_struct() = new() # uninitialized
+end
 
 function setupMPSolve(n :: Integer)
     ctx = ccall((:mps_context_new, "libmps"), Ptr{Void}, ())
@@ -45,32 +67,12 @@ function releaseMPSolveContext(ctx, mp)
 end
 
 """
-r = polyval (coefficients, x) evaluates a polynomial at a point.
-
- - coefficients is a vector containing the coefficients
- of the polynomial in decreasing degree order, so the
- leading coefficient is the first element of the vector. 
- - x is the point where the polynomial is evaluted. 
+(approximations, radii) = mps_roots(p) approximates
+the roots of the polynomial p(x). 
 """
-function polyval(coefficients :: AbstractVector, x)
-    n = length(coefficients)
-    r = 0    
-    for i = 1 : n - 1
-        r = (r + coefficients[i]) * x
-    end
-    r = r + coefficients[n]
-end
+function mps_roots(p::Poly{Complex{Float64}})
 
-"""
-(approximations, radii) = roots(coefficients) approximates
-the roots of the polynomial p(x) defined by the coefficients
-in the input vector. 
-
- - coefficients is a vector containing the coefficients, 
- with the leading coefficient first. 
-"""
-function roots(coefficients :: AbstractVector{Float64})
-
+    coefficients = p.a
     n = length(coefficients) - 1
 
     (ctx, mp) = setupMPSolve(n)
@@ -78,7 +80,7 @@ function roots(coefficients :: AbstractVector{Float64})
     for i = 1 : n + 1
         ccall((:mps_monomial_poly_set_coefficient_d, "libmps"), Void, 
               (Ptr{Void}, Ptr{Void}, Int, Float64, Float64), 
-              ctx, mp, n-i+1, real(coefficients[i]), imag(coefficients[i]))
+              ctx, mp, i-1, real(coefficients[i]), imag(coefficients[i]))
     end
 
     solvePoly(ctx, mp)
@@ -88,45 +90,39 @@ function roots(coefficients :: AbstractVector{Float64})
     (approximations, radius)
 end
 
-function roots(coefficients :: AbstractVector{Int64})
-    n = length(coefficients) - 1
+mps_roots(p::Poly{Float64}) = mps_roots(convert(Poly{Complex{Float64}}, p))
 
-    (ctx, mp) = setupMPSolve(n)
-    
-    for i = 1 : n + 1
-        ccall((:mps_monomial_poly_set_coefficient_int, "libmps"), Void, 
-              (Ptr{Void}, Ptr{Void}, Int, Int64, Int64), 
-              ctx, mp, n-i+1, real(coefficients[i]), imag(coefficients[i]))
-    end
+function mps_roots(p::Poly{Complex{Rational{BigInt}}})
 
-    solvePoly(ctx, mp)
-    (approximations, radius) = getFloatingPointRoots(ctx, mp, n)
-    releaseMPSolveContext(ctx, mp)
+    real_coefficients = real(p.a)
+    imag_coefficients = imag(p.a)
 
-    (approximations, radius)
-end
-
-function roots(real_coefficients :: AbstractVector{BigFloat},
-               imag_coefficients :: AbstractVector{BigFloat})
     n = length(real_coefficients) - 1
     (ctx, mp) = setupMPSolve(n)
 
     for i = 1 : n + 1
-        ccall ((:mps_monomial_poly_set_coefficient_s, "libmps"), Void,
-               (Ptr{Void}, Ptr{Void}, Int, Ptr{UInt8}, Ptr{UInt8}), 
-               ctx, mp, n-i+1, string(real_coefficients[i]), 
-               string(imag_coefficients[i]))
-    end
+        x = mpq_struct(real_coefficients[i])
+        y = mpq_struct(imag_coefficients[i])
+
+        ccall ((:mps_monomial_poly_set_coefficient_q, "libmps"), Void,
+               (Ptr{Void}, Ptr{Void}, Int, 
+                Ptr{mpq_struct}, Ptr{mpq_struct}), 
+               ctx, mp, i-1, &x, &y)
+    end    
 
     solvePoly(ctx, mp)
 
     # TODO: We should get the output as BigFloat numbers, instead
     # of truncating it to floating point. 
     (approximations, radius) = getFloatingPointRoots(ctx, mp, n)
-
     releaseMPSolveContext(ctx, mp)
-
     (approximations, radius)
 end
 
-end
+# Generic methods defined using the conversion of Integer types to 
+# BigInts and Rational{BigInt}s. 
+mps_roots{T<:Integer}(p::Poly{Complex{T}}) = mps_roots(convert(Poly{Complex{Rational{BigInt}}}, p))
+mps_roots{T<:Integer}(p::Poly{T}) = mps_roots(convert(Poly{Complex{Rational{BigInt}}}, p))
+mps_roots{T<:Integer}(p::Poly{Rational{T}}) = mps_roots(convert(Poly{Complex{Rational{BigInt}}}, p))
+
+end ## End of Module MPSolve
