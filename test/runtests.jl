@@ -89,8 +89,28 @@ function test_complex_bigint()
     end
 end
 
-test_roots_of_unity(100)
-test_roots_of_unity_fp(100)
-test_roots_of_unity_bigint(100)
+function test_roots_of_unity_bigfloat(n)
+    nroots = Complex{BigFloat}[ exp(1im * 2 * j * pi / n) for j = 1 : n ]
+    
+    p = [ BigFloat(0) for i = 1 : n + 1 ]
+    p[1] = BigFloat(1)
+    p[end] = BigFloat(-1)
+
+    p = Poly(p)
+
+    (app, rad) = mps_roots(p)
+
+    for i = 1 : n
+        (err, ind) = findmin(abs(app - nroots[i]))
+        @test err <= rad[ind]
+    end
+end
+
+N = 100
+
+test_roots_of_unity(N)
+test_roots_of_unity_fp(N)
+test_roots_of_unity_bigint(N)
+# test_roots_of_unity_bigfloat(N)
 test_complex_int()
 test_complex_bigint()
