@@ -3,7 +3,7 @@ using MPSolve
 using Base.Test
 
 function test_roots_of_unity(n)
-    nroots = exp(1im * 2 * pi / n)
+    nroots = [ exp(j * 1im * 2 * pi / n) for j = 1 : n ]
     
     p = [ Int64(0) for i = 1 : n + 1 ]
     p[1] = 1
@@ -14,13 +14,13 @@ function test_roots_of_unity(n)
     (app, rad) = mps_roots(p)
 
     for i = 1 : n
-        (err, ind) = findmin(abs(app - nroots))
+        (err, ind) = findmin(abs(app - nroots[i]))
         @test err <= rad[ind]
     end
 end
 
 function test_roots_of_unity_fp(n)
-    nroots = exp(1im * 2 * pi / n)
+    nroots = [ exp(j * 1im * 2 * pi / n) for j = 1 : n ]
     
     p = zeros(n+1)
     p[1] = 1.0
@@ -31,13 +31,13 @@ function test_roots_of_unity_fp(n)
     (app, rad) = mps_roots(p)
 
     for i = 1 : n
-        (err, ind) = findmin(abs(app - nroots))
+        (err, ind) = findmin(abs(app - nroots[i]))
         @test err <= rad[ind]
     end
 end
 
 function test_roots_of_unity_bigint(n)
-    nroots = exp(1im * 2 * pi / n)
+    nroots = [ exp(j * 1im * 2 * pi / n) for j = 1 : n ]
     
     p = [ BigInt(0) for i = 1 : n + 1 ]
     p[1] = BigInt(1)
@@ -48,7 +48,7 @@ function test_roots_of_unity_bigint(n)
     (app, rad) = mps_roots(p)
 
     for i = 1 : n
-        (err, ind) = findmin(abs(app - nroots))
+        (err, ind) = findmin(abs(app - nroots[i]))
         @test err <= rad[ind]
     end    
 end
