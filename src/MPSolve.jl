@@ -11,7 +11,7 @@ export mps_roots
 immutable mpz_struct
    alloc::Cint
    size::Cint
-   d::Ptr{Base.GMP.Limb}
+   d::Ptr{Void}
 end
 
 Base.convert(::Type{mpz_struct}, i::BigInt) = mpz_struct(i.alloc, i.size, i.d)
