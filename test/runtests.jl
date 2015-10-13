@@ -1,3 +1,5 @@
+# Testing for the MPSolve.jl package. 
+
 using Polynomials
 using MPSolve
 using Base.Test
