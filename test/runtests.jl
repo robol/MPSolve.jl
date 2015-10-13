@@ -7,7 +7,7 @@ using Base.Test
 function test_roots_of_unity(n)
     nroots = [ exp(j * 1im * 2 * pi / n) for j = 1 : n ]
     
-    p = [ Int64(0) for i = 1 : n + 1 ]
+    p = Int64[ 0 for i = 1 : n + 1 ]
     p[1] = 1
     p[end] = -1
 
