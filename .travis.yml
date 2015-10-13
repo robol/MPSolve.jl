@@ -13,6 +13,4 @@ before_install:
     - sudo apt-get install -y libmps3
 script:
     - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
-    - if [ -f test/runtests.jl ]; then
-        julia --check-bounds=yes -e 'Pkg.test("MPSolve", coverage=false)'
-      fi
+    - if [ -f test/runtests.jl ]; then julia --check-bounds=yes -e 'Pkg.clone(pwd()); Pkg.test("MPSolve", coverage=false)'; fi
