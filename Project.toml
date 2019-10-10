@@ -1,0 +1,10 @@
+name = "MPSolve"
+uuid = "9b0ab244-28a7-517c-931e-75c4e3199a6c"
+authors = ["Leonardo Robol <leo@robol.it>"]
+version = "0.1.0"
+
+[deps]
+Polynomials = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
+
+[compat]
+julia = "1"
