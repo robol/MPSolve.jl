@@ -1,247 +1,297 @@
 module MPSolve
 
-using Polynomials
+import Base: complex
+using Base.GMP: Limb
+using Base.MPFR: MPFRRoundingMode,MPFRRoundNearest
+export mps_roots
 
-import Base: convert,show
-import Base.GMP: BigInt
-using Base.GMP: Limb, MPZ, BigInt
-
-#export mps_roots
-export MpzStruct,MpqStruct,prnt,clear,BigInt # ,mpz_t
-
-struct MpzStruct
+struct Mpz
     alloc::Cint
     size::Cint
     d::Ptr{Limb}
 
-    MpzStruct() = MpzStruct(0)
-    MpzStruct(b::T) where T<:Signed = MpzStruct(BigInt(b))
-    function MpzStruct(b::BigInt)
-        m = Ref{MpzStruct}()
-        GC.@preserve m begin
-            ccall((:__gmpz_init, :libgmp), Cvoid, (Ref{MpzStruct},), m)
-            ccall((:__gmpz_set, :libgmp), Cvoid, (Ref{MpzStruct},Ref{BigInt}),
-                  m, b)
-            return m[]
-        end
+    Mpz() = Mpz(0)
+    Mpz(b::T) where T<:Signed = Mpz(BigInt(b))
+    function Mpz(b::BigInt)
+        m = Ref{Mpz}()
+        ccall((:__gmpz_init_set, :libgmp), Cvoid, (Ref{Mpz},Ref{BigInt}), m, b)
+        return m[]
     end
 end
 
-function BigInt(m::MpzStruct)
+Base.convert(::Type{Mpz}, x::T) where T<:Signed = Mpz(x)
+
+function BigInt(m::Mpz)
     b = BigInt()
-    ccall((:__gmpz_set, :libgmp), Cvoid, (Ref{BigInt},Ref{MpzStruct}), b, m)
+    ccall((:__gmpz_set, :libgmp), Cvoid, (Ref{BigInt},Ref{Mpz}), b, m)
+    return b
+end
+             
+struct Mpq  <: Real
+    num::Mpz
+    den::Mpz
+
+    Mpq() = Mpq(0)
+    Mpq(i::T) where T<: Signed = Mpq(i, 1)
+    Mpq(q::Rational{T}) where T<:Signed = Mpq(q.num, q.den)
+    function Mpq(num, den) where  T<:Signed
+        q = Ref{Mpq}()
+        ccall((:__gmpq_init, :libgmp), Cvoid, (Ref{Mpq},), q)
+        ccall((:__gmpq_set_num, :libgmp), Cvoid, (Ref{Mpq},Ref{BigInt}),
+              q, num)
+        ccall((:__gmpq_set_den, :libgmp), Cvoid, (Ref{Mpq},Ref{BigInt}),
+              q, den)
+        return q[]
+    end
+    function Mpq(f::BigFloat)
+        q = Ref{Mpq}()
+        ccall((:__gmpq_init, :libgmp), Cvoid, (Ref{Mpq},), q)
+        ccall((:mpfr_get_q, :libmpfr), Cvoid, (Ref{Mpq}, Ref{BigFloat}),
+              q, f)
+        return q[]
+    end
+end
+
+Base.convert(::Type{Mpq}, x::T) where T<:Union{Signed,Rational} =
+    Mpq(x)
+
+Base.Rational(q::Mpq) = Rational(BigInt(q.num), BigInt(q.den))
+
+(::Type{T})(q::Mpq) where T<: AbstractFloat = T(Rational(q))
+
+_gmp_clear!(m::Mpz) = begin
+    ccall((:__gmpz_clear, :libgmp), Cvoid, (Ref{Mpz},), m)
+end
+
+_gmp_clear!(m::Mpq) = begin
+    ccall((:__gmpq_clear, :libgmp), Cvoid, (Ref{Mpq},), m)
+end
+
+# Arbitrary precision floating point type from gmp.h used by MPSolve
+# is different from Julia's BigFloat
+struct Mpf
+    _mp_prec::Cint
+    _mp_size::Cint
+    _mp_exp::Clong
+    _mp_d::Ptr{Limb}
+
+    function Mpf(b::BigFloat)
+        f = Ref{Mpf}()
+        ccall((:__gmpf_init, :libgmp), Cvoid, (Ref{Mpf},), f)
+        ccall((:mpfr_get_f, :libmpfr), Cint,
+              (Ref{Mpf},Ref{BigFloat},MPFRRoundingMode),
+              f, b, MPFRRoundNearest)
+        return f[]
+    end
+ 
+    function Mpf(d::Float64)
+        f = Ref{Mpf}()
+        ccall((:__gmpf_init_set_d, :libgmp), Cvoid, (Ref{Mpf},Cdouble), f, d)
+        return f[]
+    end
+    
+    function Mpf(i::Int64)
+        f = Ref{Mpf}()
+        ccall((:__gmpf_init_set_si, :libgmp), Cvoid, (Ref{Mpf}, Clong), f, i)
+        return f[]
+    end
+
+    Mpf(i::Integer) = Mpf(Int64(i))
+end
+
+Base.convert(::Type{Mpf}, x::T) where T<:Signed = Mpf(x)
+
+function BigFloat(f::Mpf)
+    b = BigFloat()
+    ccall((:mpfr_set_f, :libmpfr), Cint,
+          (Ref{BigFloat},Ref{Mpf},MPFRRoundingMode),
+          b, f, MPFRRoundNearest)
     return b
 end
 
-function prnt(m::MpzStruct)
-    ccall((:__gmp_printf,:libgmp), Cvoid, (Cstring,Ref{MpzStruct},), "%Zd",m)
+Base.convert(::Type{Mpf}, x::T) where T<:Union{BigFloat,Float64,Int64} = 
+    Mpf(x)
+
+struct Mpsc
+    r::Mpf
+    i::Mpf
+end
+Mpsc() = Mpsc(0, 0)
+
+complex(m::Mpsc) = complex(BigFloat(m.r), BigFloat(m.i))
+
+_gmp_clear!(f::Mpf) = begin
+    ccall((:__gmpf_clear, :libgmp), Cvoid, (Ref{Mpf},), f)
+    nothing
 end
 
-function show(io::IO, m::MpzStruct)
-    b = BigInt(m)
-    print(io,"MpzStruct(", b, ")")
+_gmp_clear!(c::Mpsc) = _gmp_clear!([c.r, c.i])
+
+_gmp_clear!(m::Array{T}) where T<:Union{Mpz, Mpq, Mpf, Mpsc} = begin
+    map(_gmp_clear!,m);
+    nothing
 end
 
-function prnt(m::MpzStruct)
-    ccall((:__gmp_printf,:libgmp), Cvoid, (Cstring,Ref{MpzStruct},), "%Zd\n",m)
+struct Rdpe
+    r::Cdouble
+    e::Clong
 end
 
-clear(m::MpzStruct) = begin
-    ccall((:__gmpz_clear, :libgmp), Cvoid, (Ref{MpzStruct},), m)
+Float64(d::Rdpe) = ccall((:rdpe_get_d, :libmps), Cdouble, (Ref{Rdpe},) ,d)
+
+struct Cplx
+     r::Cdouble
+     i::Cdouble
 end
 
-# const mpz_t = Ref{MpzStruct}
-             
-mutable struct MpqStruct
-    num::MpzStruct
-    den::MpzStruct
+complex(m::Cplx) = Complex(m.r, m.i)
 
-    MpqStruct() = MpqStruct(MpzStruct(), MpzStruct())
-    MpqStruct(q::Rational{T}) where T<: Signed = MpqStruct(q.num, q.den)
-    function MpqStruct(num, den)
-        q = new(MpzStruct(num), MpzStruct(den))
-        finalizer(x-> begin
-                  clear(x.num)
-                  clear(x.den)
-                  end, q)
+function setup_mpsolve(degree :: Integer)
+    context = ccall((:mps_context_new, :libmps), Ptr{Cvoid}, ())
+    monomial_poly  = ccall((:mps_monomial_poly_new, :libmps), 
+                            Ptr{Cvoid}, (Ptr{Cvoid}, Int), context, degree)
+    (context, monomial_poly)
+end
+
+function set_coefficients(context, monomial_poly, coefficients)
+    local index
+    function set_coefficient(cf::Complex{Float64})
+        ccall((:mps_monomial_poly_set_coefficient_d, :libmps),
+              Cvoid, (Ref{Cvoid}, Ref{Cvoid}, Clong, Cdouble, Cdouble),
+              context, monomial_poly, index, cf.re, cf.im)
+    end
+
+    function set_coefficient(cf::Complex{T}) where  T<:Union{Signed,Rational,
+                                                             BigFloat}
+        c_re = Mpq(cf.re)
+        c_im = Mpq(cf.im)
+        ccall((:mps_monomial_poly_set_coefficient_q, :libmps),
+              Cvoid, (Ref{Cvoid}, Ref{Cvoid}, Clong, Ref{Mpq}, Ref{Mpq}),
+              context, monomial_poly, index, c_re, c_im)
+        _gmp_clear!([c_re, c_im])
+    end
+
+    function set_coefficient(cf::Complex{T}) where T<:Integer
+        c_re = Clonglong(cf.re)
+        c_im = Clonglong(cf.im)
+        ccall((:mps_monomial_poly_set_coefficient_int, :libmps),
+              Cvoid, (Ref{Cvoid}, Ref{Cvoid}, Clong, Clonglong, Clonglong),
+              context, monomial_poly, index, c_re, c_im)
+    end
+
+    set_coefficient(cf::T) where T<:Union{Float64,Signed,Rational,
+                                          BigFloat,Integer} =
+        set_coefficient(complex(cf))
+    
+    for (idx, cf) in enumerate(coefficients)
+        index = idx-1
+        set_coefficient(cf)
     end
 end
 
-show(io::IO, q::MpqStruct) = begin
-    show(io, q.num)
-    print(io, "//")
-    show(io, q.den)
+function set_input_poly(context, monomial_poly)
+    ccall((:mps_context_set_input_poly, :libmps), Cvoid, 
+          (Ref{Cvoid}, Ref{Cvoid}), context, monomial_poly)
 end
 
-# Arbitrary precision floating point type from gmp.h
-# is different from Julia's BigFloat
-struct MpfStruct
-    mp_prec::Cint
-    mp_size::Cint
-    mp_exp::Clong
-    mp_d::Ptr{Cvoid}
+@enum mps_algorithm begin
+    MPS_ALGORITHM_STANDARD_MPSOLVE
+    MPS_ALGORITHM_SECULAR_GA
+end
+@enum mps_output_goal begin
+    MPS_OUTPUT_GOAL_ISOLATE
+    MPS_OUTPUT_GOAL_APPROXIMATE
+    MPS_OUTPUT_GOAL_COUNT
 end
 
-mutable struct MpscStruct
-    r::MpfStruct
-    i::MpfStruct
-    mpsc_struct() = new()
+function solve_poly(context, output_precison)
+    ccall((:mps_context_select_algorithm, :libmps), Cvoid,
+          (Ref{Cvoid}, Cint),
+          context, MPS_ALGORITHM_SECULAR_GA)
+    ccall((:mps_context_set_output_goal, :libmps), Cvoid,
+          (Ref{Cvoid}, Cint),
+          context, MPS_OUTPUT_GOAL_APPROXIMATE)
+    ccall((:mps_context_set_output_prec, :libmps), Cvoid,
+          (Ref{Cvoid}, Clong), context, output_precison)
+    ccall((:mps_mpsolve, :libmps), Cvoid, (Ptr{Cvoid},), context)
 end
 
-# struct RdpeStruct
-#     r::Cdouble
-#     e::Clong
-# end
 
-# mutable struct Cplx_struct
-#      r::Cdouble
-#      i::Cdouble
-# end
+get_degree(context) = ccall((:mps_context_get_degree, :libmps), Cint,
+                            (Ref{Cvoid},), context)
 
-function setupMPSolve(degree :: Integer)
-    ctx = ccall((:mps_context_new, "libmps"), Ptr{Cvoid}, ())
-    mp  = ccall((:mps_monomial_poly_new, "libmps"), 
-                            Ptr{Cvoid}, (Ptr{Cvoid}, Int), ctx, degree)
-    (ctx, mp)
+function get_roots(context)
+    degree = get_degree(context)
+    roots_m = Array{Mpsc}(undef, degree)
+    for n=1:degree
+        roots_m[n] = Mpsc()
+    end
+    rds = Array{Rdpe}(undef, degree)
+    GC.@preserve roots_m rds begin
+        roots_p = pointer(roots_m)
+        rds_p = pointer(rds)
+        ccall((:mps_context_get_roots_m, :libmps), Cint,
+              (Ref{Cvoid}, Ref{Ref{Mpsc}}, Ref{Ref{Rdpe}}),
+              context, roots_p, rds_p)
+    end
+    roots = map(complex, roots_m)
+    _gmp_clear!(roots_m)
+    radii = map(Float64, rds)
+    (roots, radii)
 end
 
-function solve_poly(cf::Vector{Float64})
-    degree = length(cf) - 1
-    
+function get_roots_d(context)
+    degree =  get_degree(context)
+    roots_c = Array{Cplx}(undef, degree)
+    radii = Array{Cdouble}(undef, degree)
+    GC.@preserve roots_c radii begin
+        roots_p = pointer(roots_c)
+        radii_p = pointer(radii)
+        ccall((:mps_context_get_roots_d, :libmps), Cint,
+              (Ref{Cvoid}, Ref{Ptr{Cplx}}, Ref{Ptr{Cdouble}}),
+              context, roots_p, radii_p)
+    end
+    roots = map(complex, roots_c)
+    (roots,radii)
 end
-    
 
-# function solve_poly(ctx, mp)
-#     ccall((:mps_context_set_input_poly, "libmps"), Cvoid, 
-#           (Ptr{Cvoid}, Ptr{Cvoid}),
-#           ctx, mp)
-#     print("Enter mps_mpsolve()\n")
-#     ccall((:mps_mpsolve, "libmps"), Cvoid, (Ptr{Cvoid},), ctx)
-#     print("Leave mps_mpsolve()\n")
-# end
+function free_context(context, monomial_poly)
+    ccall((:mps_monomial_poly_free, :libmps), Cvoid,
+          (Ptr{Cvoid}, Ptr{Cvoid}), context, monomial_poly)
+    ccall((:mps_context_free, :libmps), Cvoid, (Ptr{Cvoid},), context)
+end
 
-# function get_floating_point_roots(ctx, mp, n)
-#     # Here we prepare some containers that will be used to pass a 
-#     # double ** to MPSolve, using the function mps_context_get_roots_d(). 
-#     # 
-#     # That function will allocate memory to represent the results
-#     # whose ownership will be transferred to Julia through the use 
-#     # of pointer_to_array. 
-#     app_container = Array{Ptr{Nothing}}(undef, 1)
-#     radius_container = Array{Ptr{Nothing}}(undef, 1)
-#     app_container[1] = C_NULL
-#     radius_container[1] = C_NULL
-#     #app_container = Ref(C_NULL)
-#     #radius_container = Ref(C_NULL)
-    
-#     ccall((:mps_context_get_roots_d, "libmps"), Cvoid, 
-#           (Ptr{Cvoid}, Ref{Ptr{Nothing}}, Ref{Ptr{Nothing}}),
-#           ctx, app_container, radius_container)
-#     # display(app_container[1])
+"""
+    (approximations, radii) = mps_roots(coefficients, output_precision)
 
-#     # approximations = unsafe_wrap(app_container[1], n, true)
-#     # radius = unsafe_wrap(radius_container[1], n, true)
+Approximate the roots of the polynomial specified by the array
+of its coefficients. Output precision is specified in bits.
 
-#     # (approximations, radius)
-# end
+# Example
+```jldoctest
+julia> N = 64;
 
-# # function getGMPRoots(ctx, mp, n)
-# #     # Obtain a copy of the approximations and radii represented
-# #     # as Complex{BigFloat} and BigFloat, respectively. 
+julia> cfs = zeros(Int, N + 1); cfs[end] = -(cfs[1] = 1);
 
-# #     app_container = Array(Ptr{MpscStruct}, 1)
-# #     app_container[1] = 0
+julia> (app, rad) = mps_roots(cfs, 100);
 
-# #     radius_container = Array(Ptr{RdpeStruct}, 1)
-# #     radius_container[1] = 0
-
-# #     ccall((:mps_context_get_roots_m, "libmps"), Cvoid, 
-# #           (Ptr{Cvoid}, Ptr{Ptr{MpscStruct}}, Ptr{Ptr{RdpeStruct}}),
-# #           ctx, app_container, radius_container)
-
-# #     display(app_container[1])
-# #     # mpf_approximations = pointer_to_array(app_container[1], n, true)
-    
-# #     # Convert mpf_t approximatino to the internal mpfr type of 
-# #     # Julia, so we can map them back to BigFloats
-# # end
-
-# function release_mpsolve_context(ctx, mp)
-#     ccall((:mps_monomial_poly_free, "libmps"), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}), 
-#           ctx, mp)
-#     ccall((:mps_context_free, "libmps"), Cvoid, (Ptr{Cvoid},), ctx)
-# end
-
-# # """
-# # (approximations, radii) = mps_roots(p) approximates
-# # the roots of the polynomial p(x). 
-# # """
-# function mps_roots(p::Poly{Complex{Float64}})
-
-#     coefficients = p.a
-#     n = length(coefficients) - 1
-
-#     (ctx, mp) = setupMPSolve(n)
-    
-#     for i = 1 : n + 1
-#         ccall((:mps_monomial_poly_set_coefficient_d, "libmps"), Cvoid, 
-#               (Ptr{Cvoid}, Ptr{Cvoid}, Int, Float64, Float64), 
-#               ctx, mp, i-1, real(coefficients[i]), imag(coefficients[i]))
-#     end
-
-#     solve_poly(ctx, mp)
-#     (approximations, radius) = get_floating_point_roots(ctx, mp, n)
-#     release_mpsolve_context(ctx, mp)
-
-#     (approximations, radius)
-# end
-
-# mps_roots(p::Poly{Float64}) = mps_roots(convert(Poly{Complex{Float64}}, p))
-
-# function mps_roots(p::Poly{Complex{Rational{BigInt}}})
-
-#     real_coefficients = real(p.a)
-#     imag_coefficients = imag(p.a)
-
-#     n = length(real_coefficients) - 1
-#     (ctx, mp) = setupMPSolve(n)
-
-#     for i = 1 : n + 1
-#         x = MpqStruct(real_coefficients[i])
-#         y = MpqStruct(imag_coefficients[i])
-
-#         ccall ((:mps_monomial_poly_set_coefficient_q, "libmps"), Cvoid,
-#                (Ptr{Cvoid}, Ptr{Cvoid}, Int, 
-#                 Ptr{MpqStruct}, Ptr{MpqStruct}), 
-#                ctx, mp, i-1, &x, &y)
-#     end    
-
-#     solvePoly(ctx, mp)
-
-#     # TODO: We should get the output as BigFloat numbers, instead
-#     # of truncating it to floating point. 
-#     (approximations, radius) = getFloatingPointRoots(ctx, mp, n)
-#     # (approximations, radius) = getGMPRoots(ctx, mp, n)
-#     releaseMPSolveContext(ctx, mp)
-#     (approximations, radius)
-# end
-
-# # Generic methods defined using the conversion of Integer types to 
-# # BigInts and Rational{BigInt}s. 
-# mps_roots{T<:Integer}(p::Poly{Complex{T}}) = mps_roots(convert(Poly{Complex{Rational{BigInt}}}, p))
-# mps_roots{T<:Integer}(p::Poly{T}) = mps_roots(convert(Poly{Complex{Rational{BigInt}}}, p))
-# mps_roots{T<:Integer}(p::Poly{Rational{T}}) = mps_roots(convert(Poly{Complex{Rational{BigInt}}}, p))
-
-# function mps_roots(p::Poly{Complex{BigFloat}})
-#     real_coefficients = real(p.a)
-#     imag_coefficients = imag(p.a)
-
-#     n = length(real_coefficients) - 1
-#     (ctx, mp) = setupMPSolve(n)
-
-#     # TODO: Finish to implement this function
-# end
-
-# mps_roots(p::Poly{BigFloat}) = mps_roots(convert(Poly{Complex{BigFloat}}, p))
+julia> all(map(x->abs((x^N - 1)/(N*x^(N - 1))), app) < rad)
+true
+```
+"""
+function mps_roots(coefficients::Array, output_precision=53)
+    degree = length(coefficients)-1
+    (context, monomial_poly) = setup_mpsolve(degree)
+    set_coefficients(context, monomial_poly, coefficients)
+    set_input_poly(context, monomial_poly)
+    solve_poly(context, output_precision)
+    if output_precision <= 53
+        (roots, radii) = get_roots_d(context)
+    else
+        (roots, radii) = get_roots(context)
+    end
+    free_context(context, monomial_poly)
+    (roots, radii)
+end
 
 end
