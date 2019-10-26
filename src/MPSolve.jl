@@ -32,9 +32,10 @@ struct Mpq  <: Real
     den::Mpz
 
     Mpq() = Mpq(0)
-    Mpq(i::T) where T<: Signed = Mpq(i, 1)
+    Mpq(i::T) where T<:Signed = Mpq(i, 1)
     Mpq(q::Rational{T}) where T<:Signed = Mpq(q.num, q.den)
-    function Mpq(num, den) where  T<:Signed
+    Mpq(num::T, den::S) where  {T, S<:Signed} = Mpq(BigInt(num), BigInt(den))
+    function Mpq(num::BigInt, den::BigInt)
         q = Ref{Mpq}()
         ccall((:__gmpq_init, :libgmp), Cvoid, (Ref{Mpq},), q)
         ccall((:__gmpq_set_num, :libgmp), Cvoid, (Ref{Mpq},Ref{BigInt}),
@@ -52,8 +53,7 @@ struct Mpq  <: Real
     end
 end
 
-Base.convert(::Type{Mpq}, x::T) where T<:Union{Signed,Rational} =
-    Mpq(x)
+Base.convert(::Type{Mpq}, x::T) where T<:Union{Signed,Rational} = Mpq(x)
 
 Base.Rational(q::Mpq) = Rational(BigInt(q.num), BigInt(q.den))
 

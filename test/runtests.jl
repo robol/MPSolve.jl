@@ -7,9 +7,10 @@ unity_roots(n) = [exp(j*2im*BigFloat(pi)/n) for j = 1:n]
 
 function solve_test(p, rts)
     (app, rad) = mps_roots(p, 54)
-    I = sortperm(app, by=angle)
-    dist = map(abs, app[I] - sort(rts, by=angle))
-    @test all(dist <= rad[I])
+    for i = 1:length(rts)
+        (err, ind) = findmin(map(abs, app .- rts[i]))
+        @test err <= rad[ind]
+    end
 end
 
 function test_roots_of_unity(n)
