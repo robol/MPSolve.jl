@@ -127,10 +127,8 @@ end
 
 _gmp_clear!(c::Mpsc) = _gmp_clear!([c.r, c.i])
 
-_gmp_clear!(m::Array{T}) where T<:Union{Mpz, Mpq, Mpf, Mpsc} = begin
-    map(_gmp_clear!,m);
-    nothing
-end
+_gmp_clear!(m::Array{T}) where T<:Union{Mpz, Mpq, Mpf, Mpsc} = (_gmp_clear!.(m);
+                                                                nothing)
 
 struct Rdpe
     r::Cdouble
@@ -234,9 +232,9 @@ function get_roots(context)
               (Ref{Cvoid}, Ref{Ref{Mpsc}}, Ref{Ref{Rdpe}}),
               context, roots_p, rds_p)
     end
-    roots = map(complex, roots_m)
+    roots = complex.(roots_m)
     _gmp_clear!(roots_m)
-    radii = map(Float64, rds)
+    radii = Float64.(rds)
     (roots, radii)
 end
 
@@ -251,7 +249,7 @@ function get_roots_d(context)
               (Ref{Cvoid}, Ref{Ptr{Cplx}}, Ref{Ptr{Cdouble}}),
               context, roots_p, radii_p)
     end
-    roots = map(complex, roots_c)
+    roots = complex.(roots_c)
     (roots,radii)
 end
 
