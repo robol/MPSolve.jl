@@ -1,0 +1,10 @@
+name = "MPSolve"
+uuid = "9b0ab244-28a7-517c-931e-75c4e3199a6c"
+authors = ["Leonardo Robol <leo@robol.it>", "Mikhail Kagalenko <kagalenko.m.b@rsreu.ru"]
+version = "0.9.0"
+
+[deps]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+julia = "1.3"
